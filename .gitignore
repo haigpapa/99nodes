@@ -22,3 +22,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Original high-res images (keep only optimized versions)
+public/images/originals/

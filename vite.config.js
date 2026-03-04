@@ -26,9 +26,6 @@ function adminApiPlugin() {
               const nodesPath = path.join(__dirname, 'src/data/nodes.js')
               let source = fs.readFileSync(nodesPath, 'utf-8')
 
-              // Find the node block by id and replace it
-              // Strategy: parse out the NODES array, update the matching entry, write back
-              // We do a targeted string replacement scoped to the node's id field
               const updatedSource = updateNodeInSource(source, node)
               fs.writeFileSync(nodesPath, updatedSource, 'utf-8')
 
@@ -49,7 +46,6 @@ function adminApiPlugin() {
           req.on('end', () => {
             try {
               const buffer = Buffer.concat(chunks)
-              // Parse multipart form data manually (simple boundary parser)
               const contentType = req.headers['content-type'] || ''
               const boundaryMatch = contentType.match(/boundary=(.+)/)
               if (!boundaryMatch) throw new Error('No boundary found')
@@ -59,7 +55,6 @@ function adminApiPlugin() {
               const filePart = parts.find(p => p.filename)
               if (!filePart) throw new Error('No file found in upload')
 
-              // Sanitize filename
               const ext = path.extname(filePart.filename).toLowerCase()
               const allowed = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.avif']
               if (!allowed.includes(ext)) throw new Error('File type not allowed')
@@ -98,7 +93,6 @@ function adminApiPlugin() {
               const boundary = '--' + boundaryMatch[1]
               const parts = parseMultipart(buffer, boundary)
 
-              // Extract nodeId from form fields
               const nodeIdPart = parts.find(p => !p.filename && p.name === 'nodeId')
               const nodeId = nodeIdPart ? nodeIdPart.data.toString('utf-8').trim() : null
               if (!nodeId) throw new Error('nodeId is required')
@@ -173,22 +167,18 @@ function updateLongDescription(source, nodeId, content) {
   const replacement = longDescToSource(nodeId, content)
 
   if (match) {
-    // Replace existing entry
     const absStart = ldStart + match.index
     let depth = 0
-    let end = absStart + match[0].length - 1 // position of the opening {
+    let end = absStart + match[0].length - 1
     while (end < source.length) {
       if (source[end] === '{') depth++
       if (source[end] === '}') { depth--; if (depth === 0) { end++; break } }
       end++
     }
-    // Include trailing comma if present
     if (source[end] === ',') end++
 
     return source.slice(0, absStart) + replacement + source.slice(end)
   } else {
-    // Insert new entry before the closing } of LONG_DESCRIPTIONS
-    // Find the last } of the LONG_DESCRIPTIONS object
     let depth2 = 0
     let insertPos = ldStart
     const openBrace = source.indexOf('{', ldStart + 'export const LONG_DESCRIPTIONS'.length)
@@ -232,17 +222,13 @@ function longDescToSource(nodeId, content) {
 function updateNodeInSource(source, updatedNode) {
   const id = updatedNode.id
 
-  // Find the start of this node's object: look for `id: "the-id"`
-  // Then walk outward to find the enclosing { } block
   const idPattern = new RegExp(`id:\\s*["']${escapeRegex(id)}["']`)
   const match = idPattern.exec(source)
   if (!match) throw new Error(`Node id "${id}" not found in nodes.js`)
 
-  // Walk back to find the opening brace of this object
   let start = match.index
   while (start > 0 && source[start] !== '{') start--
 
-  // Walk forward to find the matching closing brace
   let depth = 0
   let end = start
   while (end < source.length) {
@@ -251,7 +237,6 @@ function updateNodeInSource(source, updatedNode) {
     end++
   }
 
-  // Build the replacement node string
   const replacement = nodeToSource(updatedNode)
   return source.slice(0, start) + replacement + source.slice(end)
 }
@@ -283,16 +268,13 @@ function parseMultipart(buffer, boundary) {
 
   let pos = 0
   while (pos < buffer.length) {
-    // Find boundary
     const bStart = indexOf(buffer, boundaryBuf, pos)
     if (bStart === -1) break
     pos = bStart + boundaryBuf.length
 
-    // Skip CRLF after boundary
     if (buffer[pos] === 0x0d && buffer[pos + 1] === 0x0a) pos += 2
-    else if (buffer[pos] === 0x2d && buffer[pos + 1] === 0x2d) break // --boundary--
+    else if (buffer[pos] === 0x2d && buffer[pos + 1] === 0x2d) break
 
-    // Parse headers
     const headers = {}
     let filename = null
     let name = null
@@ -301,7 +283,7 @@ function parseMultipart(buffer, boundary) {
       if (lineEnd === -1) break
       const line = buffer.slice(pos, lineEnd).toString('utf-8')
       pos = lineEnd + 2
-      if (line === '') break // empty line = end of headers
+      if (line === '') break
 
       const cdMatch = line.match(/Content-Disposition:.*filename="([^"]+)"/i)
       if (cdMatch) filename = cdMatch[1]
@@ -309,11 +291,9 @@ function parseMultipart(buffer, boundary) {
       if (nameMatch) name = nameMatch[1]
     }
 
-    // Find next boundary to determine body end
     const nextBoundary = indexOf(buffer, boundaryBuf, pos)
     if (nextBoundary === -1) break
 
-    // Body is from pos to nextBoundary minus trailing CRLF
     let dataEnd = nextBoundary
     if (buffer[dataEnd - 2] === 0x0d && buffer[dataEnd - 1] === 0x0a) dataEnd -= 2
 
@@ -334,5 +314,6 @@ function indexOf(buf, search, start = 0) {
 }
 
 export default defineConfig({
+  base: '/99nodes/',
   plugins: [react(), adminApiPlugin()],
 })

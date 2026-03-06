@@ -1,12 +1,12 @@
 // utils/nodeImage.js
-// Resolves node images — real images as-is, fallback to dithered typographic SVG.
+// Resolves node images — real images as-is, fallback to SVG placeholder.
 
 import { CATEGORY_RGB_STRING } from './colors';
 
 /**
  * Returns the resolved image src for a node.
  * If the node has a real image (not picsum), returns it as-is.
- * Otherwise generates a dithered typographic SVG with the node's title.
+ * Otherwise generates an SVG data URI using the node's primary category color.
  */
 export function getNodeImage(node) {
   if (node.image && !node.image.includes('picsum.photos')) {
@@ -15,112 +15,72 @@ export function getNodeImage(node) {
 
   const primaryCat = node.categories?.[0] || 'systems';
   const rgb = CATEGORY_RGB_STRING[primaryCat] || CATEGORY_RGB_STRING.systems;
-  const title = (node.title || 'UNTITLED').toUpperCase();
+  const title = (node.title || 'UNKNOWN').toUpperCase();
   
-  // Deterministic seed from node id for consistent randomness
-  const seed = hashCode(node.id || title);
-  
-  // Split title into lines
-  const words = title.split(' ');
-  const lines = [];
-  let current = '';
-  for (const word of words) {
-    if (current && (current + ' ' + word).length > 12) {
-      lines.push(current);
-      current = word;
-    } else {
-      current = current ? current + ' ' + word : word;
-    }
-  }
-  if (current) lines.push(current);
+  // Calculate text scale based on length so it doesn't break entirely,
+  // but we WANT it to stretch (Brutalist style)
+  const stretchWidth = Math.max(800, title.length * 90);
 
-  // Calculate font size
-  const maxLen = Math.max(...lines.map(l => l.length));
-  const fontSize = maxLen <= 5 ? 72 : maxLen <= 8 ? 56 : maxLen <= 12 ? 42 : 32;
-  const lineHeight = fontSize * 1.2;
-  const totalHeight = lines.length * lineHeight;
-  const startY = 150 - totalHeight / 2 + fontSize * 0.35;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600" viewBox="0 0 800 600">
+    <defs>
+      <filter id="noise">
+        <feTurbulence type="fractalNoise" baseFrequency="0.8" numOctaves="4" stitchTiles="stitch"/>
+        <feColorMatrix type="matrix" values="1 0 0 0 0, 0 1 0 0 0, 0 0 1 0 0, 0 0 0 0.25 0" />
+      </filter>
+      
+      <clipPath id="slice1">
+        <rect x="0" y="0" width="800" height="200" />
+      </clipPath>
+      <clipPath id="slice2">
+        <rect x="0" y="200" width="800" height="150" />
+      </clipPath>
+      <clipPath id="slice3">
+        <rect x="0" y="350" width="800" height="250" />
+      </clipPath>
+    </defs>
+    
+    <!-- Background -->
+    <rect width="800" height="600" fill="#050505"/>
+    <rect width="800" height="600" fill="rgb(${rgb})" opacity="0.15"/>
+    
+    <!-- Deep structural shadow / extruded text -->
+    <!-- Using Impact/sans-serif, heavily condensed visually by the viewBox stretching -->
+    <g font-family="Impact, 'Helvetica Neue', sans-serif" font-weight="900" font-size="320" text-anchor="middle" letter-spacing="-5">
+       
+       <!-- Shadow layer (offset down and right) -->
+       <text x="420" y="420" textLength="${stretchWidth}" lengthAdjust="spacingAndGlyphs" fill="none" stroke="rgb(${rgb})" stroke-width="4" opacity="0.6">${title}</text>
+       
+       <!-- Offset glitch layer -->
+       <text x="380" y="380" textLength="${stretchWidth}" lengthAdjust="spacingAndGlyphs" fill="rgb(${rgb})" opacity="0.8" clip-path="url(#slice2)">${title}</text>
+       
+       <!-- Main Sliced Text: off-white/silver -->
+       <!-- Slice 1: shifted left -->
+       <text x="340" y="400" textLength="${stretchWidth}" lengthAdjust="spacingAndGlyphs" fill="#F0F0F0" clip-path="url(#slice1)">${title}</text>
+       
+       <!-- Slice 2: shifted right -->
+       <text x="460" y="400" textLength="${stretchWidth}" lengthAdjust="spacingAndGlyphs" fill="#FFFFFF" clip-path="url(#slice2)">${title}</text>
+       
+       <!-- Slice 3: shifted left further -->
+       <text x="300" y="400" textLength="${stretchWidth}" lengthAdjust="spacingAndGlyphs" fill="#D0D0D0" clip-path="url(#slice3)">${title}</text>
+    </g>
 
-  // Build text elements with slight random offsets for hand-crafted feel
-  const textEls = lines.map((line, i) => {
-    const y = startY + i * lineHeight;
-    const xOff = ((seed + i * 17) % 7) - 3;
-    const escaped = line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    return `<text x="${200 + xOff}" y="${y}" text-anchor="middle" font-family="'Helvetica Neue','Arial Black',Impact,sans-serif" font-weight="900" font-size="${fontSize}" fill="rgb(${rgb})" letter-spacing="0.08em" filter="url(#rough)">${escaped}</text>`;
-  }).join('\n  ');
+    <!-- Structural Grid Lines (Swiss/Brutalist framing) -->
+    <path d="M 0 200 L 800 200 M 0 350 L 800 350 M 400 0 L 400 600" stroke="rgb(${rgb})" stroke-width="3" opacity="0.8" />
+    <path d="M 40 40 L 760 40 L 760 560 L 40 560 Z" fill="none" stroke="rgb(${rgb})" stroke-width="2" opacity="0.5" />
+    
+    <!-- Category Label (Small brutalist badge) -->
+    <rect x="40" y="40" width="220" height="60" fill="rgb(${rgb})" />
+    <text x="55" y="80" fill="#050505" font-family="monospace" font-size="28" font-weight="bold" letter-spacing="4">${primaryCat.toUpperCase()}</text>
+    
+    <!-- Technical Metadata Overlay -->
+    <text x="50" y="540" fill="rgb(${rgb})" font-family="monospace" font-size="16" letter-spacing="2">SYS_ID: ${Math.random().toString(36).substr(2, 8).toUpperCase()}</text>
+    <text x="750" y="540" fill="rgb(${rgb})" font-family="monospace" font-size="16" text-anchor="end" letter-spacing="2">INDEX_${node.id || '00'}</text>
 
-  // Generate scattered dither dots based on seed
-  const dots = [];
-  for (let i = 0; i < 120; i++) {
-    const px = seededRandom(seed + i * 3) * 400;
-    const py = seededRandom(seed + i * 7 + 1) * 300;
-    const r = seededRandom(seed + i * 11 + 2) * 1.5 + 0.3;
-    const op = seededRandom(seed + i * 13 + 3) * 0.15 + 0.03;
-    dots.push(`<circle cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="${r.toFixed(1)}" fill="rgb(${rgb})" opacity="${op.toFixed(2)}"/>`);
-  }
+    <!-- Noise Overlay -->
+    <rect width="800" height="600" style="pointer-events:none;" filter="url(#noise)"/>
+  </svg>`;
 
-  // Horizontal scan lines
-  const scanLines = [];
-  for (let y = 0; y < 300; y += 4) {
-    const op = ((seed + y) % 3 === 0) ? 0.04 : 0.015;
-    scanLines.push(`<line x1="0" y1="${y}" x2="400" y2="${y}" stroke="rgb(${rgb})" stroke-width="0.5" opacity="${op}"/>`);
-  }
-
-  // Accent bar position varies by seed
-  const barY = 20 + (seed % 60);
-  const barW = 80 + (seed % 120);
-  const barX = 40 + (seed % 280);
-
-  // Year and category
-  const year = node.year || '';
-  const catLabel = primaryCat.toUpperCase();
-
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300" viewBox="0 0 400 300">
-  <defs>
-    <filter id="rough" x="-5%" y="-5%" width="110%" height="110%">
-      <feTurbulence type="fractalNoise" baseFrequency="0.65" numOctaves="3" result="noise"/>
-      <feDisplacementMap in="SourceGraphic" in2="noise" scale="1.5" xChannelSelector="R" yChannelSelector="G"/>
-    </filter>
-    <filter id="grain">
-      <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="4" stitchTiles="stitch" result="noise"/>
-      <feColorMatrix type="saturate" values="0" in="noise" result="mono"/>
-      <feBlend in="SourceGraphic" in2="mono" mode="multiply"/>
-    </filter>
-    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="rgb(6,6,10)"/>
-      <stop offset="50%" stop-color="rgb(10,10,16)"/>
-      <stop offset="100%" stop-color="rgb(8,8,14)"/>
-    </linearGradient>
-  </defs>
-  <rect width="400" height="300" fill="url(#bg)"/>
-  <g filter="url(#grain)" opacity="0.7">
-    <rect width="400" height="300" fill="transparent"/>
-  </g>
-  ${scanLines.join('\n  ')}
-  ${dots.join('\n  ')}
-  <rect x="${barX}" y="${barY}" width="${barW}" height="1.5" fill="rgb(${rgb})" opacity="0.2"/>
-  <rect x="0" y="0" width="2.5" height="300" fill="rgb(${rgb})" opacity="0.5"/>
-  ${textEls}
-  <text x="388" y="20" text-anchor="end" font-family="'Courier New',monospace" font-weight="400" font-size="9" fill="rgb(${rgb})" opacity="0.3" letter-spacing="0.12em">${year}</text>
-  <text x="388" y="288" text-anchor="end" font-family="'Courier New',monospace" font-weight="400" font-size="9" fill="rgb(${rgb})" opacity="0.25" letter-spacing="0.15em">${catLabel}</text>
-</svg>`;
-
-  return `data:image/svg+xml;base64,${btoa(svg)}`;
-}
-
-// Simple hash for deterministic randomness
-function hashCode(str) {
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    const char = str.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash |= 0;
-  }
-  return Math.abs(hash);
-}
-
-// Seeded pseudo-random [0, 1)
-function seededRandom(seed) {
-  const x = Math.sin(seed * 9301 + 49297) * 233280;
-  return x - Math.floor(x);
+  // Needs to handle the fact that some titles might have special characters
+  // We use encodeURIComponent for SVGs instead of btoa sometimes, but btoa is fine if we unescape
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }
